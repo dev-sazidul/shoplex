@@ -1,0 +1,2 @@
+import { AuthForm } from "@shoplex/ui/AuthForm";
+export default function SellerLogin() { return <main className="auth-page"><section className="auth-aside"><a className="wordmark" href="/">SHOP<span>LEX</span><i>.</i></a><h2>Your business belongs here.</h2><p>One Marketplace. Endless Opportunities.</p></section><section className="auth-main"><AuthForm redirectTo="/dashboard" customerRedirectTo="/" /></section></main>; }

@@ -1,0 +1,9 @@
+{
+  "name": "@shoplex/ui",
+  "version": "0.1.0",
+  "private": true,
+  "types": "./src/index.tsx",
+  "exports": { ".": "./src/index.tsx", "./*": "./src/*.tsx" },
+  "dependencies": { "@shoplex/types": "0.1.0" },
+  "peerDependencies": { "react": "^19.2.0" }
+}

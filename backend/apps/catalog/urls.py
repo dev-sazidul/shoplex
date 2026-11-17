@@ -1,0 +1,41 @@
+from django.urls import path
+
+from apps.catalog.views import (
+	BrandListView,
+	CategoryListView,
+	CustomerReviewListView,
+	NewsletterSubscribeView,
+	ProductApprovalQueueView,
+	ProductDetailView,
+	ProductListView,
+	ProductReviewActionView,
+	ProductReviewListCreateView,
+	ProductSuggestionView,
+	SellerProductDetailView,
+	SellerProductImageView,
+	SellerProductListCreateView,
+	SellerProductSubmitView,
+	SellerProductVariantDetailView,
+	SellerProductVariantListCreateView,
+	StorefrontView,
+)
+
+urlpatterns = [
+	path("storefront/", StorefrontView.as_view(), name="storefront"),
+	path("categories/", CategoryListView.as_view(), name="category-list"),
+	path("brands/", BrandListView.as_view(), name="brand-list"),
+	path("products/", ProductListView.as_view(), name="product-list"),
+	path("products/suggestions/", ProductSuggestionView.as_view(), name="product-suggestions"),
+	path("products/<slug:slug>/", ProductDetailView.as_view(), name="product-detail"),
+	path("products/<slug:slug>/reviews/", ProductReviewListCreateView.as_view(), name="product-reviews"),
+	path("reviews/mine/", CustomerReviewListView.as_view(), name="customer-reviews"),
+	path("newsletter/subscribe/", NewsletterSubscribeView.as_view(), name="newsletter-subscribe"),
+	path("seller/products/", SellerProductListCreateView.as_view(), name="seller-product-list"),
+	path("seller/products/<uuid:pk>/", SellerProductDetailView.as_view(), name="seller-product-detail"),
+	path("seller/products/<uuid:product_id>/submit/", SellerProductSubmitView.as_view(), name="seller-product-submit"),
+	path("seller/products/<uuid:product_id>/images/", SellerProductImageView.as_view(), name="seller-product-images"),
+	path("seller/products/<uuid:product_id>/variants/", SellerProductVariantListCreateView.as_view(), name="seller-product-variants"),
+	path("seller/products/<uuid:product_id>/variants/<uuid:pk>/", SellerProductVariantDetailView.as_view(), name="seller-product-variant-detail"),
+	path("management/product-approvals/", ProductApprovalQueueView.as_view(), name="product-approval-queue"),
+	path("management/products/<uuid:product_id>/review/", ProductReviewActionView.as_view(), name="product-review-action"),
+]
