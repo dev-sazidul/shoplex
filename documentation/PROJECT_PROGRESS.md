@@ -1,6 +1,6 @@
 # SHOPLEX Project Progress
 
-Last updated: 2026-11-17 · Phase 2
+Last updated: 2026-11-17 · Phase 2 UI hardening
 
 ## Completed
 
@@ -18,6 +18,7 @@ Last updated: 2026-11-17 · Phase 2
 - Financial/order behavior is server-calculated: configurable commission precedence, default commission environment value, seller-specific suborders, reserved stock, retry-safe checkout, completion-gated seller earnings, and owner-controlled shipping/commission configuration endpoints.
 - Added 13 additional backend tests (22 total) covering dual seller approval, rejection/resubmission cycles, product publication gate, seller isolation, split checkout/idempotency/stock rollback, shipping quote, delivered-purchase reviews, payment privacy, and payout eligibility.
 - Added private reviewer document downloads, printable customer invoices, protected product and seller review queues, configurable shipping quotes, customer payment/review history, and seller-owned product-variation stock controls.
+- UI hardening pass: fixed the shared Button default so non-submit actions cannot accidentally submit forms; seller-only workspace routes now redirect unapproved/customer accounts to the application flow while preserving customer access to seller onboarding; refreshed shared responsive tokens, sticky marketplace navigation/filter/sidebar behavior, card surfaces, focus states, and mobile-safe spacing.
 
 ## Folder Structure
 
@@ -86,6 +87,7 @@ See `.env.example` for the starter values.
 - `cd frontend && npm install`: passed, no reported vulnerabilities.
 - `python backend/manage.py test apps.accounts apps.authorization apps.sellers apps.catalog apps.commerce apps.platform`: 22 tests passed.
 - `npm run build:all`: passed for all five Next.js applications; Customer includes static account/marketing routes and server-rendered dynamic product/category/store routes.
+- Latest verification limitation: the workspace currently has no usable Node/npm binary, and the checked-in `.venv` points to a missing Homebrew Python 3.14 binary; therefore this UI hardening pass was validated with editor diagnostics only and the existing recorded backend/frontend verification remains the last successful full run.
 - Live Django API `/api/v1/health/`, `/api/v1/storefront/`, Customer `/`, `/products`, `/robots.txt`, and `/sitemap.xml`: HTTP 200.
 - Docker Compose YAML parses successfully.
 - PostgreSQL/Compose startup was not run: Docker is not installed in the current environment.

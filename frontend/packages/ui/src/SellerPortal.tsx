@@ -25,7 +25,13 @@ export function SellerPortalHome() {
 function SellerFrame({ title, children }: { title: string; children: React.ReactNode }) {
   const router = useRouter(); const { user, logout } = useSession();
   useEffect(() => { if (!user) router.replace("/login"); }, [user, router]);
+  useEffect(() => {
+    if (user && title !== "Seller application" && !user.roles.includes("seller")) {
+      router.replace("/application");
+    }
+  }, [title, user, router]);
   if (!user) return <main className="account-loading"><LoadingState label="Checking seller access" /></main>;
+  if (title !== "Seller application" && !user.roles.includes("seller")) return <main className="account-loading"><LoadingState label="Checking seller approval" /></main>;
   return <main className="seller-shell"><header className="seller-topbar"><a className="wordmark" href="/">SHOP<span>LEX</span><i>.</i></a><span className="seller-topbar__title">SELLER / {title}</span><div><span>{user.email}</span><button onClick={() => void logout().then(() => router.replace("/"))}>Sign out</button></div></header><div className="seller-layout"><aside className="seller-sidebar"><p className="eyebrow">Store management</p><nav>{[["Overview", "/dashboard"], ["Products", "/products"], ["Orders", "/orders"], ["Returns", "/returns"], ["Earnings", "/earnings"], ["Application", "/application"]].map(([label, href]) => <a key={href} href={href}>{label}</a>)}</nav></aside><section className="seller-main"><div className="seller-page-heading"><p className="eyebrow">SHOPLEX / SELLER</p><h1>{title}</h1></div>{children}</section></div></main>;
 }
 
@@ -106,7 +112,7 @@ export function SellerProducts() {
           <label>Stock quantity<input name="stock_quantity" type="number" min="0" defaultValue={selected?.stock_quantity ?? 0} required /></label>
           <label className="seller-form__wide">Description<textarea name="description" defaultValue={selected?.description ?? ""} required /></label>
           <label>Product images<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => setFiles(event.target.files)} /></label>
-          <div className="seller-form__actions"><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save draft"}</Button>{selected && <Button variant="secondary" onClick={() => setSelected(null)}>Cancel edit</Button>}</div>
+          <div className="seller-form__actions"><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save draft"}</Button>{selected && <Button type="button" variant="secondary" onClick={() => setSelected(null)}>Cancel edit</Button>}</div>
         </form>
       </Card>
       <div className="seller-table-wrap"><table className="seller-table"><thead><tr><th>Product</th><th>SKU</th><th>Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead><tbody>

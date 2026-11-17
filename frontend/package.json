@@ -1,15 +1,18 @@
 {
   "name": "@shoplex/frontend-workspace",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev:customer": "npm run dev --workspace=@shoplex/customer",
-    "dev:seller": "npm run dev --workspace=@shoplex/seller",
-    "dev:admin": "npm run dev --workspace=@shoplex/admin",
-    "dev:manager": "npm run dev --workspace=@shoplex/manager",
-    "dev:owner": "npm run dev --workspace=@shoplex/owner",
-    "build:customer": "npm run build --workspace=@shoplex/customer",
-    "build:all": "npm run build --workspaces --if-present",
+    "dev:customer": "node init && npm run dev --workspace=@shoplex/customer",
+    "dev:seller": "node init && npm run dev --workspace=@shoplex/seller",
+    "dev:admin": "node init && npm run dev --workspace=@shoplex/admin",
+    "dev:manager": "node init && npm run dev --workspace=@shoplex/manager",
+    "dev:owner": "node init && npm run dev --workspace=@shoplex/owner",
+    "build:customer": "node init && npm run build --workspace=@shoplex/customer",
+    "build:all": "node init && npm run build --workspaces --if-present",
     "typecheck": "tsc --noEmit -p apps/customer/tsconfig.json"
   },
   "dependencies": {

@@ -4,7 +4,7 @@ import { useEffect, useId, useRef } from "react";
 import type { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes } from "react";
 
 export function Button({ variant = "primary", className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "quiet" }) {
-  return <button className={`button button--${variant} ${className}`} {...props} />;
+  return <button type="button" className={`button button--${variant} ${className}`} {...props} />;
 }
 
 export function TextInput({ label, error, id, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string }) {
