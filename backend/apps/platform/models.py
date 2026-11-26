@@ -114,8 +114,11 @@ class ManagerProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="manager_profile")
     title = models.CharField(max_length=120, blank=True)
     business_unit = models.CharField(max_length=120, blank=True)
+    responsibilities = models.JSONField(default=list, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="managers_created")
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
 
 class ManagerInvitation(models.Model):
@@ -175,3 +178,263 @@ class PlatformSetting(models.Model):
 
     def __str__(self):
         return self.key
+
+
+
+class AdminAssignment(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    manager = models.ForeignKey(ManagerProfile, on_delete=models.CASCADE, related_name="admin_assignments")
+    admin = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="manager_assignments")
+    responsibilities = models.CharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="admin_assignments_made",
+    )
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-assigned_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["manager", "admin"],
+                condition=models.Q(is_active=True),
+                name="uniq_active_manager_admin_assignment",
+            )
+        ]
+        indexes = [models.Index(fields=["manager", "is_active"]), models.Index(fields=["admin", "is_active"])]
+
+
+class AdminAssignmentHistory(models.Model):
+    class Action(models.TextChoices):
+        ASSIGNED = "assigned", "Assigned"
+        REASSIGNED = "reassigned", "Reassigned"
+        REMOVED = "removed", "Removed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    admin = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="assignment_history")
+    manager = models.ForeignKey(
+        ManagerProfile,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="assignment_history",
+    )
+    action = models.CharField(max_length=16, choices=Action.choices)
+    note = models.CharField(max_length=255, blank=True)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="admin_assignment_actions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class BusinessSharePlan(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=160)
+    code = models.SlugField(max_length=80, unique=True)
+    total_authorized_shares = models.PositiveIntegerField(default=100000)
+    max_allocated_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=100)
+    company_valuation = models.DecimalField(max_digits=16, decimal_places=2)
+    currency = models.CharField(max_length=3, default="BDT")
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="share_plans_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(max_allocated_percentage__gt=0) & models.Q(max_allocated_percentage__lte=100),
+                name="share_plan_max_percentage_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(company_valuation__gt=0),
+                name="share_plan_positive_valuation",
+            ),
+        ]
+
+
+class BusinessShare(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan = models.ForeignKey(BusinessSharePlan, on_delete=models.CASCADE, related_name="share_classes")
+    class_name = models.CharField(max_length=120)
+    share_count = models.PositiveIntegerField()
+    percentage_represented = models.DecimalField(max_digits=5, decimal_places=2)
+    unit_price = models.DecimalField(max_digits=14, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["class_name"]
+
+
+class ShareOffer(models.Model):
+    class Status(models.TextChoices):
+        OFFERED = "offered", "Offered"
+        ACCEPTED = "accepted", "Accepted"
+        CANCELLED = "cancelled", "Cancelled"
+        EXPIRED = "expired", "Expired"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan = models.ForeignKey(BusinessSharePlan, on_delete=models.CASCADE, related_name="offers")
+    partner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="share_offers")
+    offered_shares = models.PositiveIntegerField()
+    offered_percentage = models.DecimalField(max_digits=5, decimal_places=2)
+    valuation_at_offer = models.DecimalField(max_digits=16, decimal_places=2)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.OFFERED, db_index=True)
+    terms_note = models.TextField(blank=True)
+    offered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="share_offers_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class ShareAllocation(models.Model):
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Active"
+        TRANSFERRED = "transferred", "Transferred"
+        REVOKED = "revoked", "Revoked"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan = models.ForeignKey(BusinessSharePlan, on_delete=models.CASCADE, related_name="allocations")
+    holder = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="share_allocations")
+    allocated_shares = models.PositiveIntegerField()
+    ownership_percentage = models.DecimalField(max_digits=5, decimal_places=2)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE, db_index=True)
+    allocated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="share_allocations_made",
+    )
+    allocated_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-ownership_percentage", "-allocated_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(ownership_percentage__gt=0) & models.Q(ownership_percentage__lte=100),
+                name="share_allocation_percentage_range",
+            )
+        ]
+
+
+class ShareTransaction(models.Model):
+    class TransactionType(models.TextChoices):
+        ALLOCATION = "allocation", "Initial allocation"
+        TRANSFER = "transfer", "Permitted share transfer"
+        REVOCATION = "revocation", "Allocation revocation"
+        VALUATION_UPDATE = "valuation_update", "Valuation update"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan = models.ForeignKey(BusinessSharePlan, on_delete=models.PROTECT, related_name="transactions")
+    transaction_type = models.CharField(max_length=20, choices=TransactionType.choices, db_index=True)
+    from_holder = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="share_transactions_out",
+    )
+    to_holder = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="share_transactions_in",
+    )
+    shares_count = models.PositiveIntegerField(default=0)
+    percentage_delta = models.DecimalField(max_digits=5, decimal_places=2)
+    valuation_snapshot = models.DecimalField(max_digits=16, decimal_places=2)
+    legal_reference = models.CharField(max_length=160, blank=True)
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="share_transactions_recorded",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValueError("Share transaction records are append-only.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Share transaction records are append-only.")
+
+
+class OwnershipHistory(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan = models.ForeignKey(BusinessSharePlan, on_delete=models.PROTECT, related_name="ownership_history")
+    holder = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="ownership_snapshots")
+    previous_percentage = models.DecimalField(max_digits=5, decimal_places=2)
+    new_percentage = models.DecimalField(max_digits=5, decimal_places=2)
+    reason = models.CharField(max_length=255)
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="ownership_history_recorded",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValueError("Ownership history records are append-only.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Ownership history records are append-only.")
+
+
+class ShareDocument(models.Model):
+    class DocumentType(models.TextChoices):
+        AGREEMENT = "agreement", "Shareholder agreement"
+        CERTIFICATE = "certificate", "Share certificate"
+        TRANSFER_DEED = "transfer_deed", "Transfer deed"
+        VALUATION_REPORT = "valuation_report", "Valuation report"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan = models.ForeignKey(BusinessSharePlan, on_delete=models.CASCADE, related_name="documents")
+    holder = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="share_documents",
+    )
+    title = models.CharField(max_length=180)
+    document_type = models.CharField(max_length=24, choices=DocumentType.choices, default=DocumentType.CERTIFICATE)
+    reference_number = models.CharField(max_length=120)
+    summary = models.TextField(blank=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="share_documents_uploaded",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]

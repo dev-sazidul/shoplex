@@ -78,6 +78,7 @@ class SellerDashboardView(APIView):
         pending_payouts = SellerPayoutRequest.objects.filter(seller=seller, status__in=[SellerPayoutRequest.Status.PENDING, SellerPayoutRequest.Status.APPROVED])
         paid_payouts = SellerPayoutRequest.objects.filter(seller=seller, status=SellerPayoutRequest.Status.PAID)
         sale_total = seller.earnings_ledger.filter(entry_type__in=["sale", "adjustment"]).aggregate(total=Sum("amount"))["total"] or 0
+        adjustment_total = seller.earnings_ledger.filter(entry_type="adjustment").aggregate(total=Sum("amount"))["total"] or 0
         refund_total = seller.earnings_ledger.filter(entry_type="refund").aggregate(total=Sum("amount"))["total"] or 0
         earning_total = sale_total - refund_total
         sales_total = completed.aggregate(total=Sum("subtotal"))["total"] or 0
@@ -86,9 +87,11 @@ class SellerDashboardView(APIView):
         return Response({
             "products": {
                 "total": products.count(),
+                "approved": products.filter(status__in=[Product.Status.APPROVED, Product.Status.PUBLISHED]).count(),
                 "published": products.filter(status=Product.Status.PUBLISHED).count(),
                 "pending": products.filter(status=Product.Status.PENDING_APPROVAL).count(),
                 "rejected": products.filter(status=Product.Status.REJECTED).count(),
+                "changes_requested": products.filter(status=Product.Status.CHANGES_REQUESTED).count(),
                 "drafts": products.filter(status=Product.Status.DRAFT).count(),
             },
             "orders": {
@@ -100,11 +103,13 @@ class SellerDashboardView(APIView):
                 "gross_sales": sales_total,
                 "platform_commission": commission_total,
                 "refunds": refund_total,
+                "adjustments": adjustment_total,
                 "net_earnings": earning_total,
                 "pending_settlement": pending_order_earnings,
                 "available_balance": max(earning_total - (pending_payouts.aggregate(total=Sum("amount"))["total"] or 0), 0),
                 "pending_payouts": pending_payouts.count(),
                 "completed_payouts": paid_payouts.count(),
+                "completed_payout_amount": paid_payouts.aggregate(total=Sum("amount"))["total"] or 0,
             },
         })
 

@@ -102,16 +102,40 @@ class SessionTokenObtainPairSerializer(TokenObtainPairSerializer):
         data["access"] = str(refresh.access_token)
         request = self.context.get("request")
         lifetime = refresh["exp"]
+        user_agent = request.META.get("HTTP_USER_AGENT", "")[:512] if request else ""
+        ip_address = request.META.get("REMOTE_ADDR") if request else None
+        is_owner = self.user.role_assignments.filter(role__key=Role.Key.OWNER).exists()
+        previous_sessions = AuthSession.objects.filter(user=self.user)
+        suspicious = bool(
+            is_owner
+            and previous_sessions.exists()
+            and not previous_sessions.filter(ip_address=ip_address, user_agent=user_agent).exists()
+        )
         AuthSession.objects.create(
             id=session_id,
             user=self.user,
             refresh_jti=refresh["jti"],
             expires_at=datetime.fromtimestamp(lifetime, tz=timezone.utc),
-            user_agent=request.META.get("HTTP_USER_AGENT", "")[:512] if request else "",
-            ip_address=request.META.get("REMOTE_ADDR") if request else None,
+            user_agent=user_agent,
+            ip_address=ip_address,
         )
+        if is_owner:
+            from apps.platform.models import Notification
+            Notification.objects.create(
+                user=self.user,
+                category="security_alert",
+                title="Suspicious login detected" if suspicious else "Owner console sign-in alert",
+                body=f"Sign-in from IP {ip_address or 'unknown'} ({user_agent or 'unknown device'}).",
+                payload={"session_id": session_id, "suspicious": suspicious, "ip_address": ip_address},
+            )
         if request:
-            record_audit(request, "auth.login", resource_type="user", resource_id=self.user.pk)
+            record_audit(
+                request,
+                "auth.login.suspicious" if suspicious else "auth.login",
+                resource_type="user",
+                resource_id=self.user.pk,
+                metadata={"suspicious": suspicious},
+            )
         data["user"] = UserSerializer(self.user).data
         return data
 

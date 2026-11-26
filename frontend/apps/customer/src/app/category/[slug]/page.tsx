@@ -15,7 +15,14 @@ async function categoryFor(slug: string) {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const category = await categoryFor(slug);
-  return { title: category ? `${category.name} | SHOPLEX` : "Category | SHOPLEX", description: category?.description || `Browse ${category?.name ?? "SHOPLEX"} products.`, alternates: { canonical: `${site}/category/${slug}` } };
+  const title = category ? `${category.name} | SHOPLEX` : "Category | SHOPLEX";
+  const description = category?.description || `Browse ${category?.name ?? "SHOPLEX"} products from verified sellers.`;
+  return {
+    title,
+    description,
+    alternates: { canonical: `${site}/category/${slug}` },
+    openGraph: { title, description, url: `${site}/category/${slug}`, type: "website" },
+  };
 }
 
 export default async function CategoryPage({ params }: PageProps) {

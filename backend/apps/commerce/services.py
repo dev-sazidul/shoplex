@@ -15,6 +15,7 @@ from apps.commerce.models import (
     CommissionRule,
     Coupon,
     CouponRedemption,
+    FinancialLedgerEntry,
     Order,
     OrderItem,
     Payment,
@@ -37,15 +38,19 @@ def unit_price(product, variant):
     return variant.price if variant and variant.price is not None else product.price
 
 
-def commission_percentage(seller, category):
+def commission_percentage(seller, category, product=None):
     rules = CommissionRule.objects.filter(is_active=True)
+    if product is not None:
+        product_rule = rules.filter(product=product).order_by("-created_at").first()
+        if product_rule:
+            return product_rule.percentage
     for seller_filter, category_filter in (
         (seller, category),
         (seller, None),
         (None, category),
         (None, None),
     ):
-        rule = rules.filter(seller=seller_filter, category=category_filter).order_by("-created_at").first()
+        rule = rules.filter(seller=seller_filter, category=category_filter, product__isnull=True).order_by("-created_at").first()
         if rule:
             return rule.percentage
     return settings.DEFAULT_PLATFORM_COMMISSION_PERCENT
@@ -115,10 +120,16 @@ def create_order(request, address_id, payment_method, idempotency_key, coupon_co
     per_seller_shipping = shipping_rule.amount if shipping_rule else Decimal("0")
     shipping_total = money(per_seller_shipping * len(groups))
     total = money(subtotal - discount_total + shipping_total)
+    initial_order_status = (
+        Order.Status.PROCESSING
+        if payment_method == Order.PaymentMethod.COD
+        else Order.Status.PENDING_PAYMENT
+    )
     order = Order.objects.create(
         order_number=f"SLX-{uuid.uuid4().hex[:12].upper()}",
         idempotency_key=str(idempotency_key),
         customer=user,
+        status=initial_order_status,
         payment_method=payment_method,
         subtotal=subtotal,
         discount_total=discount_total,
@@ -143,7 +154,7 @@ def create_order(request, address_id, payment_method, idempotency_key, coupon_co
         seller_commission = Decimal("0")
         for _, product, _, _, line_total in lines:
             allocated = money(discount_total * line_total / subtotal) if subtotal else Decimal("0")
-            seller_commission += money(max(line_total - allocated, Decimal("0")) * commission_percentage(product.seller, product.category) / Decimal("100"))
+            seller_commission += money(max(line_total - allocated, Decimal("0")) * commission_percentage(product.seller, product.category, product=product) / Decimal("100"))
         seller_totals.append((seller_id, lines, seller_subtotal, seller_discount, money(seller_commission)))
 
     # Allocate rounding residue to the final seller so split totals equal the parent order exactly.
@@ -158,6 +169,7 @@ def create_order(request, address_id, payment_method, idempotency_key, coupon_co
         seller_order = SellerOrder.objects.create(
             order=order,
             seller=seller,
+            status=initial_order_status,
             subtotal=seller_subtotal,
             discount_amount=seller_discount,
             shipping_amount=per_seller_shipping,
@@ -208,7 +220,8 @@ def create_order(request, address_id, payment_method, idempotency_key, coupon_co
 def cancel_order(request, order):
     order = Order.objects.select_for_update().get(pk=order.pk, customer=request.user)
     suborders = list(order.seller_orders.select_for_update().prefetch_related("items"))
-    if not suborders or any(row.status not in [SellerOrder.Status.PROCESSING] for row in suborders):
+    cancellable = {SellerOrder.Status.PENDING_PAYMENT, SellerOrder.Status.PAID, SellerOrder.Status.PROCESSING}
+    if not suborders or any(row.status not in cancellable for row in suborders):
         raise ValidationError("This order can no longer be cancelled. Request a return instead.")
     for seller_order in suborders:
         for item in seller_order.items.all():
@@ -228,6 +241,7 @@ def cancel_order(request, order):
 def update_seller_order(request, seller_order, status_value, carrier="", tracking_number=""):
     seller_order = SellerOrder.objects.select_for_update().get(pk=seller_order.pk, seller=request.user.seller_profile)
     allowed = {
+        SellerOrder.Status.PAID: {SellerOrder.Status.PROCESSING, SellerOrder.Status.SHIPPED, SellerOrder.Status.CANCELLED},
         SellerOrder.Status.PROCESSING: {SellerOrder.Status.SHIPPED, SellerOrder.Status.CANCELLED},
         SellerOrder.Status.SHIPPED: {SellerOrder.Status.DELIVERED},
         SellerOrder.Status.DELIVERED: {SellerOrder.Status.COMPLETED},
@@ -256,6 +270,35 @@ def update_seller_order(request, seller_order, status_value, carrier="", trackin
                 entry_type=SellerEarning.EntryType.SALE,
                 defaults={"amount": seller_order.net_earnings, "reference": seller_order.order.order_number},
             )
+        ref_key = f"{seller_order.order.order_number}:{seller_order.pk}"
+        if not FinancialLedgerEntry.objects.filter(reference_id=ref_key).exists():
+            if seller_order.subtotal > 0:
+                FinancialLedgerEntry.objects.create(
+                    transaction_type=FinancialLedgerEntry.TransactionType.GROSS_SALE,
+                    amount=seller_order.subtotal,
+                    reference_id=ref_key,
+                    order=seller_order.order,
+                    status=FinancialLedgerEntry.Status.SETTLED,
+                    description=f"Completed suborder for {seller_order.seller.business_name}",
+                )
+            if seller_order.commission_amount > 0:
+                FinancialLedgerEntry.objects.create(
+                    transaction_type=FinancialLedgerEntry.TransactionType.PLATFORM_COMMISSION,
+                    amount=seller_order.commission_amount,
+                    reference_id=ref_key,
+                    order=seller_order.order,
+                    status=FinancialLedgerEntry.Status.SETTLED,
+                    description=f"Platform commission from {seller_order.seller.business_name}",
+                )
+            if seller_order.net_earnings > 0:
+                FinancialLedgerEntry.objects.create(
+                    transaction_type=FinancialLedgerEntry.TransactionType.SELLER_LIABILITY,
+                    amount=seller_order.net_earnings,
+                    reference_id=ref_key,
+                    order=seller_order.order,
+                    status=FinancialLedgerEntry.Status.POSTED,
+                    description=f"Net earnings payable to {seller_order.seller.business_name}",
+                )
     seller_order.save(update_fields=["status", "carrier", "tracking_number", "completed_at"])
     order = seller_order.order
     statuses = list(order.seller_orders.values_list("status", flat=True))

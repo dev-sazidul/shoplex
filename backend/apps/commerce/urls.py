@@ -1,5 +1,30 @@
 from django.urls import path
 
+from apps.commerce.analytics import ManagementOverviewView
+from apps.commerce.payments import (
+	OwnerFinancialReconciliationView,
+	OwnerOrderRefundView,
+	PaymentInitiationView,
+	PaymentWebhookView,
+)
+from apps.commerce.control_center import (
+	AdminOperationsDashboardView,
+	OwnerAuditLogListView,
+	OwnerBrandManageView,
+	OwnerCategoryManageView,
+	OwnerExecutiveDashboardView,
+	OwnerFinancialLedgerView,
+	OwnerPayoutDecisionView,
+	OwnerPayoutListView,
+	OwnerPlatformSettingsView,
+	OwnerSecurityCenterView,
+	OwnerSellerManagementView,
+	OwnerSellerStatusActionView,
+	ProductModerationStatusView,
+	ProductReportListCreateView,
+	ProductReportResolveView,
+)
+
 from apps.commerce.views import (
 	AddressDetailView,
 	AddressListCreateView,
@@ -46,4 +71,24 @@ urlpatterns = [
 	path("seller/returns/<int:return_id>/review/", SellerReturnDecisionView.as_view(), name="seller-return-review"),
 	path("management/commission-rules/", CommissionRuleListCreateView.as_view(), name="commission-rules"),
 	path("management/shipping-rules/", ShippingRuleListCreateView.as_view(), name="shipping-rules"),
+	path("management/overview/", ManagementOverviewView.as_view(), name="management-overview"),
+	path("management/admin-dashboard/", AdminOperationsDashboardView.as_view(), name="admin-operations-dashboard"),
+	path("management/products/<uuid:product_id>/status/", ProductModerationStatusView.as_view(), name="product-moderation-status"),
+	path("management/product-reports/", ProductReportListCreateView.as_view(), name="product-report-list"),
+	path("management/product-reports/<uuid:report_id>/resolve/", ProductReportResolveView.as_view(), name="product-report-resolve"),
+	path("owner/dashboard/", OwnerExecutiveDashboardView.as_view(), name="owner-executive-dashboard"),
+	path("owner/sellers/", OwnerSellerManagementView.as_view(), name="owner-seller-list"),
+	path("owner/sellers/<int:seller_id>/status/", OwnerSellerStatusActionView.as_view(), name="owner-seller-status"),
+	path("owner/payouts/", OwnerPayoutListView.as_view(), name="owner-payout-list"),
+	path("owner/payouts/<uuid:payout_id>/decision/", OwnerPayoutDecisionView.as_view(), name="owner-payout-decision"),
+	path("owner/finance/ledger/", OwnerFinancialLedgerView.as_view(), name="owner-financial-ledger"),
+	path("owner/categories/", OwnerCategoryManageView.as_view(), name="owner-category-manage"),
+	path("owner/brands/", OwnerBrandManageView.as_view(), name="owner-brand-manage"),
+	path("owner/settings/", OwnerPlatformSettingsView.as_view(), name="owner-platform-settings"),
+	path("owner/security/", OwnerSecurityCenterView.as_view(), name="owner-security-center"),
+	path("owner/audit-logs/", OwnerAuditLogListView.as_view(), name="owner-audit-logs"),
+	path("payments/<uuid:order_id>/initiate/", PaymentInitiationView.as_view(), name="payment-initiate"),
+	path("payments/webhook/<str:provider>/", PaymentWebhookView.as_view(), name="payment-webhook"),
+	path("owner/payments/<uuid:order_id>/refund/", OwnerOrderRefundView.as_view(), name="owner-order-refund"),
+	path("owner/payments/reconciliation/", OwnerFinancialReconciliationView.as_view(), name="owner-payment-reconciliation"),
 ]

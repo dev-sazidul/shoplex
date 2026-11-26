@@ -38,6 +38,7 @@ export interface ProductSummary {
   name: string;
   slug: string;
   description: string;
+  sku?: string;
   price: string;
   compare_at_price: string | null;
   attributes: Record<string, unknown>;
@@ -48,5 +49,5 @@ export interface ProductSummary {
   average_rating: number | null;
   review_count: number;
   in_stock: boolean;
-  variants: Array<{ id: string; name: string; options: Record<string, string>; price: string | null; stock_quantity: number }>;
+  variants: Array<{ id: string; name: string; sku?: string; options: Record<string, string>; price: string | null; stock_quantity: number }>;
 }

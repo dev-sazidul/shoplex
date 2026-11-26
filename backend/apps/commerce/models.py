@@ -96,34 +96,45 @@ class ShippingRule(models.Model):
 class CommissionRule(models.Model):
     seller = models.ForeignKey(SellerProfile, null=True, blank=True, on_delete=models.CASCADE, related_name="commission_rules")
     category = models.ForeignKey(Category, null=True, blank=True, on_delete=models.CASCADE, related_name="commission_rules")
+    product = models.ForeignKey(Product, null=True, blank=True, on_delete=models.CASCADE, related_name="commission_rules")
     percentage = models.DecimalField(max_digits=5, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         constraints = [models.CheckConstraint(condition=Q(percentage__gte=0) & Q(percentage__lte=100), name="commission_percentage_range")]
-        indexes = [models.Index(fields=["seller", "category", "is_active"])]
+        indexes = [models.Index(fields=["seller", "category", "is_active"]), models.Index(fields=["product", "is_active"])]
 
 
 class Order(models.Model):
     class Status(models.TextChoices):
+        PENDING_PAYMENT = "pending_payment", "Pending payment"
+        PAID = "paid", "Paid"
         PROCESSING = "processing", "Processing"
         SHIPPED = "shipped", "Shipped"
         DELIVERED = "delivered", "Delivered"
         COMPLETED = "completed", "Completed"
+        PAYMENT_FAILED = "payment_failed", "Payment failed"
         CANCELLED = "cancelled", "Cancelled"
         RETURN_REQUESTED = "return_requested", "Return requested"
+        RETURNED = "returned", "Returned"
+        REFUND_PENDING = "refund_pending", "Refund pending"
         REFUNDED = "refunded", "Refunded"
 
     class PaymentMethod(models.TextChoices):
         COD = "cod", "Cash on delivery"
+        SSLCOMMERZ = "sslcommerz", "SSLCommerz"
+        BKASH = "bkash", "bKash"
+        NAGAD = "nagad", "Nagad"
+        CARD = "card", "Debit / credit card"
+        BANK_TRANSFER = "bank_transfer", "Bank transfer"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     order_number = models.CharField(max_length=24, unique=True, db_index=True)
     idempotency_key = models.CharField(max_length=64, blank=True)
     customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="orders")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PROCESSING, db_index=True)
-    payment_method = models.CharField(max_length=8, choices=PaymentMethod.choices)
+    payment_method = models.CharField(max_length=20, choices=PaymentMethod.choices)
     subtotal = models.DecimalField(max_digits=12, decimal_places=2)
     discount_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     shipping_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -140,12 +151,17 @@ class Order(models.Model):
 
 class SellerOrder(models.Model):
     class Status(models.TextChoices):
+        PENDING_PAYMENT = "pending_payment", "Pending payment"
+        PAID = "paid", "Paid"
         PROCESSING = "processing", "Processing"
         SHIPPED = "shipped", "Shipped"
         DELIVERED = "delivered", "Delivered"
         COMPLETED = "completed", "Completed"
+        PAYMENT_FAILED = "payment_failed", "Payment failed"
         CANCELLED = "cancelled", "Cancelled"
         RETURN_REQUESTED = "return_requested", "Return requested"
+        RETURNED = "returned", "Returned"
+        REFUND_PENDING = "refund_pending", "Refund pending"
         REFUNDED = "refunded", "Refunded"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -186,15 +202,34 @@ class Payment(models.Model):
         PENDING = "pending", "Pending"
         PAID = "paid", "Paid"
         FAILED = "failed", "Failed"
+        REFUND_PENDING = "refund_pending", "Refund pending"
         REFUNDED = "refunded", "Refunded"
 
     order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="payment")
-    method = models.CharField(max_length=8, choices=Order.PaymentMethod.choices)
-    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING)
+    method = models.CharField(max_length=20, choices=Order.PaymentMethod.choices)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING, db_index=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     currency = models.CharField(max_length=3, default="BDT")
+    provider_reference = models.CharField(max_length=120, blank=True, db_index=True)
+    gateway_session_id = models.CharField(max_length=120, blank=True)
+    gateway_fee = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    refunded_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class PaymentWebhookEvent(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.CharField(max_length=24, db_index=True)
+    event_id = models.CharField(max_length=120, unique=True)
+    transaction_reference = models.CharField(max_length=120, db_index=True)
+    payload = models.JSONField(default=dict, blank=True)
+    processed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-processed_at"]
 
 
 class SellerEarning(models.Model):
@@ -258,3 +293,72 @@ class ReturnRequest(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["customer", "created_at"])]
+
+
+
+class FinancialLedgerEntry(models.Model):
+    class TransactionType(models.TextChoices):
+        GROSS_SALE = "gross_sale", "Gross sale"
+        PLATFORM_COMMISSION = "platform_commission", "Platform commission"
+        SELLER_LIABILITY = "seller_liability", "Seller liability"
+        REFUND_DEDUCTION = "refund_deduction", "Refund deduction"
+        OPERATIONAL_EXPENSE = "operational_expense", "Operational expense"
+        PAYMENT_FEE = "payment_fee", "Payment fee"
+        SELLER_PAYOUT = "seller_payout", "Seller payout settlement"
+
+    class Status(models.TextChoices):
+        POSTED = "posted", "Posted"
+        SETTLED = "settled", "Settled"
+        REVERSED = "reversed", "Reversed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    transaction_type = models.CharField(max_length=24, choices=TransactionType.choices, db_index=True)
+    amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    currency = models.CharField(max_length=3, default="BDT")
+    reference_id = models.CharField(max_length=120, db_index=True)
+    order = models.ForeignKey(
+        Order,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="ledger_entries",
+    )
+    payout_request = models.ForeignKey(
+        SellerPayoutRequest,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="ledger_entries",
+    )
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.POSTED, db_index=True)
+    description = models.CharField(max_length=255, blank=True)
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="ledger_entries_recorded",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(condition=Q(amount__gt=0), name="financial_ledger_amount_positive"),
+        ]
+        indexes = [
+            models.Index(fields=["transaction_type", "status", "created_at"]),
+            models.Index(fields=["reference_id", "transaction_type"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValueError("Financial ledger records are append-only.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Financial ledger records are append-only.")

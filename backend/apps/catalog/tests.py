@@ -110,3 +110,20 @@ class ProductWorkflowTests(TestCase):
         self.assertTrue(first.data["is_verified_purchase"])
         duplicate = self.client.post(f"/api/v1/products/{product.slug}/reviews/", payload, format="json")
         self.assertEqual(duplicate.status_code, 400)
+
+
+    def test_seller_dashboard_includes_approved_rejected_and_adjustment_metrics(self):
+        published = self.product_for(self.seller_profile, "northline-pub")
+        published.status = Product.Status.PUBLISHED
+        published.save(update_fields=["status"])
+        rejected = self.product_for(self.seller_profile, "northline-rej")
+        rejected.status = Product.Status.REJECTED
+        rejected.save(update_fields=["status"])
+        self.client.force_authenticate(self.seller)
+        response = self.client.get("/api/v1/seller/dashboard/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["products"]["total"], 2)
+        self.assertEqual(response.data["products"]["approved"], 1)
+        self.assertEqual(response.data["products"]["rejected"], 1)
+        self.assertIn("adjustments", response.data["finance"])
+        self.assertIn("completed_payouts", response.data["finance"])

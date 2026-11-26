@@ -1,2 +1,5 @@
-import { PortalHome } from "@shoplex/ui/PortalHome";
-export default function ManagerHome() { return <PortalHome role="manager" />; }
+import { ManagerPortal } from "@shoplex/ui/ManagerPortal";
+
+export default function ManagerHome() {
+  return <ManagerPortal />;
+}

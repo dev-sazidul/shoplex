@@ -78,8 +78,52 @@ Base path: `/api/v1/`
 | POST | `/orders/suborders/{id}/returns/` | Request return for delivered seller order | Authenticated, parent order ownership checked |
 | GET | `/payments/` | List caller's payment records | Authenticated, self only |
 
-## Owner Configuration
+## Payments, Refunds & Financial Reconciliation (Phase 5)
 
+| Method | Path | Purpose | Access |
+| --- | --- | --- | --- |
+| POST | `/payments/{order_id}/initiate/` | Initiate payment session for `sslcommerz`, `bkash`, `nagad`, `card`, or `bank_transfer` (rejects raw card PAN/CVV) | Authenticated order owner |
+| POST | `/payments/webhook/{provider}/` | Server-side provider webhook verification with HMAC signature check, `PaymentWebhookEvent` duplicate callback protection, gateway fee ledger posting, and stock restoration on failure | Public webhook (HMAC signature verified) |
+| POST | `/owner/payments/{order_id}/refund/` | Atomic full order refund synchronizing `Order`, `SellerOrder`, `Payment`, stock restoration, `SellerEarning(entry_type=REFUND)`, and append-only `FinancialLedgerEntry(transaction_type=REFUND_DEDUCTION)` | Owner role only |
+| GET | `/owner/payments/reconciliation/` | Financial reconciliation report comparing completed suborder earnings, seller ledger credits/debits, settled payouts, and ledger entries | Owner role only |
+
+## Manager Portal & Business Ownership Management (Phase 4)
+
+| Method | Path | Purpose | Access |
+| --- | --- | --- | --- |
+| GET | `/manager/dashboard/` | Permission-scoped Manager dashboard: profile, responsibilities, authorized business overview, order reports, revenue analytics (`manager.reports.finance`), seller/product reports, assigned Admin monitoring (`manager.admins.monitor`), and own share ownership (`manager.shares.read`, `manager.shares.documents`) | Active Manager or Owner |
+| GET/POST | `/owner/managers/` | List all managers and invitations, or create/invite a new manager account | Owner role only |
+| POST | `/owner/managers/{id}/status/` | Activate, suspend, or remove a manager with immediate session invalidation | Owner role only |
+| POST | `/owner/managers/{id}/permissions/` | Grant or revoke any of the 8 granular manager permissions (`UserPermission` override) with immediate effect | Owner role only |
+| GET/POST | `/owner/admin-assignments/` | Assign, reassign, or remove Admin accounts to/from individual Managers and read assignment history | Owner role only |
+| GET/POST | `/owner/shares/plans/` | List or create/update internal `BusinessSharePlan` and `BusinessShare` classes and company valuation | Owner role only |
+| POST | `/owner/shares/offers/` | Record a share offer (`ShareOffer`) for a selected partner within the permitted allocation ceiling | Owner role only |
+| POST | `/owner/shares/allocations/` | Allocate partner ownership shares (`ShareAllocation`) under a row lock, validating total allocated percentage never exceeds plan limits and recording append-only `ShareTransaction` and `OwnershipHistory` entries | Owner role only |
+| POST | `/owner/shares/transfers/` | Execute a legally documented share transfer between two partners with append-only transaction and ownership history logging | Owner role only |
+| POST | `/owner/shares/documents/` | Record an ownership legal document (`ShareDocument`: certificate, shareholder agreement, transfer deed, valuation report) | Owner role only |
+
+## Admin & Owner Control Center (Phase 3)
+
+| Method | Path | Purpose | Access |
+| --- | --- | --- | --- |
+| GET | `/management/admin-dashboard/` | Operational moderation metrics, recent approval timeline, and product catalog list (no revenue/profit exposure) | Admin or Owner (`catalog.products.review` / `seller.applications.review`) |
+| POST | `/management/products/{id}/status/` | Suspend (`suspend`) or restore (`restore`) a product listing | Admin or Owner (`suspend`); Owner only (`restore`) |
+| GET/POST | `/management/product-reports/` | File a product compliance report (`POST`) or list reports (`GET`) | Authenticated create; Admin or Owner list |
+| POST | `/management/product-reports/{id}/resolve/` | Resolve or dismiss a product report, with optional product suspension | Admin or Owner |
+| GET | `/owner/dashboard/` | Executive business metrics (9), financial metrics (12), daily/monthly/yearly revenue charts, seller & product performance leaderboards | Owner role only |
+| GET | `/owner/sellers/` | Full seller directory with product counts, order counts, gross sales, commissions, net earnings, and paid payouts | Owner role only |
+| POST | `/owner/sellers/{id}/status/` | Suspend or reactivate a seller store and account, revoking active sessions on suspension | Owner role only |
+| GET | `/owner/payouts/` | List all seller payout requests | Owner role only |
+| POST | `/owner/payouts/{id}/decision/` | Approve, settle (`paid`), or reject a seller payout request; settling posts an immutable `FinancialLedgerEntry` | Owner role only |
+| GET/POST | `/owner/finance/ledger/` | Read the immutable append-only financial ledger and summary totals, or record an operational expense / payment fee / refund deduction | Owner role only |
+| POST | `/owner/categories/`, `/owner/brands/` | Create or update marketplace categories and brands | Owner role only |
+| GET/PUT | `/owner/settings/` | Read or update the 11 platform settings domains (`website_info`, `branding`, `commission_defaults`, `shipping_config`, `tax_settings`, `refund_policies`, `payment_gateways`, `email_config`, `seo_settings`, `maintenance_mode`, `notification_settings`) | Owner role only |
+| GET/POST | `/owner/security/` | Read mandatory MFA device status, active sessions, and login alerts; enroll/rotate MFA device or reauthenticate with password | Owner role only |
+| GET | `/owner/audit-logs/` | Inspect the append-only platform audit history | Owner role only |
+
+## Owner & Management Analytics
+
+- `GET /management/overview/`: permission-scoped operational, financial (14-day daily GMV/order series, commission total, status breakdown), and user role metrics (`platform.analytics.read` for Owner/Manager commerce & user telemetry; operational moderation metrics for Admin/Owner/Manager).
 - `GET/POST /management/commission-rules/`: configure global, category, or seller rates; Owner role only.
 - `GET/POST /management/shipping-rules/`: configure country shipping rates; Owner role only.
 - The environment fallback commission is `DEFAULT_PLATFORM_COMMISSION_PERCENT` (10.00 by default); database rules take precedence.

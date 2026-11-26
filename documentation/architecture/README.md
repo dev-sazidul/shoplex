@@ -1,37 +1,97 @@
-# SHOPLEX Architecture
+# SHOPLEX Architecture & Database ER Diagram
 
-## System Shape
+## 1. System Topology
 
-Five separate Next.js applications share React/TypeScript UI and types. They use a single versioned Django REST API; PostgreSQL is the source of truth for identity, authorization, platform data, sessions, and audit history. Redis backs Celery and Django's configured cache integration point. Nginx provides the local reverse-proxy entry point.
+Five separate Next.js 16 applications share React/TypeScript UI (`@shoplex/ui`) and types (`@shoplex/types`). All portals communicate with one centralized, versioned Django REST API (`/api/v1/`). PostgreSQL is the primary relational data store (with SQLite fallback for zero-dependency local checks); Redis backs Celery workers and caching; Nginx provides reverse-proxy routing.
 
-```text
-Customer / Seller / Admin / Manager / Owner Next.js apps
-                         |
-                 HTTPS / JSON REST
-                         |
-              Nginx -> Django REST API
-                         |
-             PostgreSQL + Redis / Celery
+```mermaid
+flowchart TD
+    subgraph Portals["Five Next.js 16 Portals"]
+        C["Customer Portal (shoplex.com :3000)"]
+        S["Seller Workspace (seller.shoplex.com :3001)"]
+        A["Admin Portal (admin.shoplex.com :3002)"]
+        M["Manager Portal (manager.shoplex.com :3003)"]
+        O["Owner Console (owner.shoplex.com :3004)"]
+    end
+
+    UI["Shared Packages (@shoplex/ui, @shoplex/types)"]
+    Portals --> UI
+
+    NGINX["Nginx Reverse Proxy (:8080)"]
+    API["Django REST API (/api/v1/ :8000)"]
+    PG[("PostgreSQL 17 Database")]
+    REDIS[("Redis 8 Cache & Broker")]
+    CELERY["Celery Async Worker"]
+
+    Portals -->|"HTTPS / JSON + Bearer JWT"| NGINX
+    NGINX --> API
+    API --> PG
+    API --> REDIS
+    CELERY --> REDIS
+    CELERY --> PG
 ```
 
-## Ownership Boundaries
+## 2. PostgreSQL Entity-Relationship Diagram
 
-- `accounts`: custom email-based user, profile, registration, verification, login, reset, and session operations.
-- `authorization`: platform roles, granular permissions, role assignments, user-level grants/denials, and API permission checks.
-- `platform`: sessions, MFA devices, seller/manager identity records, notifications, settings, and audit events.
-- `frontend/packages/ui`: shared visual tokens and components; no authorization decisions live in browser code.
-- `frontend/apps/*`: independent Next.js deployables; each consumes the same backend and shared packages.
+All monetary columns use exact `DECIMAL(12, 2)` representation — never floating-point numbers. User-facing primary keys use UUIDs, with relational foreign keys, uniqueness constraints, check constraints, and composite indexes.
 
-## Authentication / Authorization
+```mermaid
+erDiagram
+    USER ||--o| USER_PROFILE : "has"
+    USER ||--o{ USER_ROLE : "assigned"
+    ROLE ||--o{ USER_ROLE : "grants"
+    ROLE ||--o{ ROLE_PERMISSION : "includes"
+    PERMISSION ||--o{ ROLE_PERMISSION : "attached_to"
+    USER ||--o{ USER_PERMISSION : "overrides"
+    PERMISSION ||--o{ USER_PERMISSION : "target"
+    USER ||--o{ AUTH_SESSION : "tracks"
+    USER ||--o{ MFA_DEVICE : "enrolls"
+    USER ||--o| SELLER_PROFILE : "operates"
+    USER ||--o{ SELLER_APPLICATION : "submits"
+    SELLER_APPLICATION ||--o{ SELLER_DOCUMENT : "attaches"
+    SELLER_APPLICATION ||--o{ SELLER_APPLICATION_APPROVAL : "reviewed_by"
+    USER ||--o| MANAGER_PROFILE : "holds"
+    USER ||--o{ NOTIFICATION : "receives"
+    USER ||--o{ AUDIT_LOG : "actor"
 
-The API issues 10-minute access JWTs and 7-day rotating refresh JWTs. Both carry a session identifier; refresh rotates the stored JTI under a database row lock, and protected API requests reject missing, expired, revoked, or suspended sessions. Password resets and logout revoke server-side sessions. User status is checked on every authenticated request.
+    SELLER_PROFILE ||--o{ PRODUCT : "publishes"
+    CATEGORY ||--o{ PRODUCT : "classifies"
+    BRAND ||--o{ PRODUCT : "labels"
+    PRODUCT ||--o{ PRODUCT_IMAGE : "displays"
+    PRODUCT ||--o{ PRODUCT_VARIANT : "options"
+    PRODUCT ||--o{ PRODUCT_APPROVAL : "moderated_by"
+    PRODUCT ||--o{ PRODUCT_REVIEW : "rated_in"
 
-RBAC uses `Role`, `Permission`, `RolePermission`, `UserRole`, and `UserPermission`. Explicit grants or denials override role grants; only the owner role receives foundation management permissions by seed migration. Owner role assignment is intentionally excluded from the API and provisioned with the `create_owner` management command.
+    USER ||--o{ ADDRESS : "ships_to"
+    USER ||--o| CART : "owns"
+    CART ||--o{ CART_ITEM : "contains"
+    USER ||--o{ ORDER : "places"
+    ORDER ||--o{ SELLER_ORDER : "splits_into"
+    SELLER_PROFILE ||--o{ SELLER_ORDER : "fulfills"
+    SELLER_ORDER ||--o{ ORDER_ITEM : "lines"
+    ORDER ||--o{ PAYMENT : "records"
+    SELLER_ORDER ||--o| SELLER_EARNING : "settles"
+    SELLER_PROFILE ||--o{ SELLER_PAYOUT_REQUEST : "requests"
+    SELLER_ORDER ||--o{ RETURN_REQUEST : "returns"
+```
 
-## Database Notes
+## 3. Domain Module Boundaries
 
-The initial identity and platform schema uses UUID identifiers for user-facing entities, normalized join tables, database uniqueness constraints, explicit indexes, and foreign keys. `AuditLog` blocks update/delete through its model API; production should additionally use a PostgreSQL role/trigger policy to enforce append-only behavior against direct SQL.
+- **`apps.accounts`**: Custom UUID `User` model (`email` as `USERNAME_FIELD`), `UserProfile`, Argon2 password hashing, registration, signed email verification, password recovery, rotating JWT login/refresh, and session revocation.
+- **`apps.authorization`**: Normalized `Role` (`customer`, `seller`, `admin`, `manager`, `owner`), `Permission`, `RolePermission`, `UserRole`, and expiring `UserPermission` overrides. Enforced server-side via `user_has_permission` and DRF permission classes.
+- **`apps.platform`**: `AuthSession` (with refresh JTI lock rotation), `MFADevice`, `SellerProfile`, `SellerApplication`, `SellerDocument`, `SellerApplicationApproval`, `ManagerProfile`, `ManagerInvitation`, `Notification`, append-only `AuditLog`, and `PlatformSetting`.
+- **`apps.catalog`**: `Category`, `Brand`, `Product`, `ProductImage`, `ProductVariant`, dual-review `ProductApproval`, verified-purchase `ProductReview`, `MarketingBanner`, and `NewsletterSubscription`.
+- **`apps.commerce`**: `Address`, `Cart`, `CartItem`, `WishlistEntry`, `Coupon`, `CouponRedemption`, `ShippingRule`, `CommissionRule`, idempotent multi-seller `Order`, `SellerOrder`, `OrderItem`, `Payment`, `SellerEarning`, `SellerPayoutRequest`, `ReturnRequest`, and permission-scoped `ManagementOverviewView` (`/api/v1/management/overview/`).
+- **`apps.sellers`**: Seller application submission, private verification document download, Admin + Owner dual-approval cycle service, seller dashboard metrics, and balance-validated payout requests.
 
-## Deployment Boundary
+## 4. Design System Architecture (`@shoplex/ui`)
 
-`docker-compose.yml` runs PostgreSQL, Redis, the Django development server, a Celery worker, and Nginx. The five Next apps run independently with `npm run dev:<portal>` from `frontend/`. The compose API uses Django's development server and must be replaced with a production WSGI server and hardened secrets/TLS before deployment.
+- **Palette Tokens**:
+  - Deep Midnight Navy: `#0F172A` / `#111827`
+  - Rich Cobalt Blue: `#2563EB` / `#4F46E5`
+  - Warm Off-White: `#FAF9F6`
+  - Pure White Surface: `#FFFFFF`
+  - Refined Champagne Gold: `#C8A96B`
+  - Slate Gray: `#64748B`
+- **Typography**: `Playfair Display` for editorial and executive headings paired with `DM Sans` for high-legibility UI controls, tables, and financial metrics.
+- **Core Components**: `Button`, `TextInput`, `SelectInput`, `TextareaInput`, `Checkbox`, `Card` (`CardHeader`, `CardBody`, `CardFooter`), `StatCard`, `AreaChart`, `BarChart`, `DataTable`, `Modal`, `Sidebar`, `TopNav`, `PortalShell`, `Breadcrumbs`, `Tooltip`, `StatusPill`, `Badge`, `Notification`, `Icon`, `LoadingState`, `Skeleton`, `EmptyState`, and `ErrorState`.
