@@ -21,9 +21,10 @@ Last updated: 2026-11-26 · Phase 5 Payment, Financial System, Security & Produc
    - Seller application submission with private document uploads and independent Admin + Owner dual-approval cycle.
    - 14-metric Seller Dashboard with revenue and catalog charts, multi-variant product catalog editor with brand assignment and Color/Size builder, suborder fulfillment (`processing` → `shipped` → `delivered` → `completed`), return request decisions, and balance-limited payout requests.
 
-5. **Admin Portal (`admin.shoplex.com`, `AdminPortal.tsx`, `control_center.py`)**
-   - Dedicated `AdminPortal.tsx` component (imported by `apps/admin/src/app/page.tsx`) providing a focused operational assistant dashboard for seller application verification, product dual-approval moderation, product suspension, and product compliance reports.
-   - Strict backend-enforced isolation (`403 Forbidden`) from all Owner revenue, profit, ledger, payout, manager, share, and settings endpoints.
+5. **Final Owner & Admin Role Structure (`AdminPortal.tsx`, `OwnerPortal.tsx`, `admin_staff.py`)**
+   - **Owner (Super Administrator)**: Unrestricted authority across all 5 portals; can create, update, suspend, and remove Admin staff accounts (with immediate `AuthSession` revocation); can individually grant and revoke **16 granular Admin permissions** (`admin.products.create`, `admin.products.edit`, `admin.products.delete`, `admin.products.publish`, `admin.products.approve`, `admin.sellers.manage`, `admin.customers.manage`, `admin.orders.manage`, `admin.suppliers.manage`, `admin.suppliers.import`, `admin.coupons.manage`, `admin.shipping.manage`, `admin.support.manage`, `admin.reports.analytics`, `admin.refunds.process`, `admin.finance.reports`); and can upload/publish platform-owned SHOPLEX products.
+   - **Admin (Owner's Employee / Staff Member)**: Zero automatic staff permissions, zero independent product ownership, zero seller commissions or revenue share, and blocked (`403 Forbidden`) from registering as a seller or self-granting permissions. Products uploaded by an authorized Admin are always **platform-owned SHOPLEX Official products** (`ownership_type="platform"`, `seller="SHOPLEX Official"` owned by Owner), with `created_by` storing the Admin account ID and `product_source` (`owner_platform` or `supplier`) stored separately.
+   - Dynamic backend-enforced RBAC reflected live in the Admin sidebar (`/api/v1/admin-staff/me/permissions/`) with full `AuditLog` tracking.
 
 6. **Manager & Owner Portals (`manager.shoplex.com`, `owner.shoplex.com`, `ManagerPortal.tsx`, `OwnerPortal.tsx`, `manager_governance.py`)**
    - Dedicated `ManagerPortal.tsx` component (imported by `apps/manager/src/app/page.tsx`) consuming `/api/v1/manager/dashboard/` and controlled by 8 granular permissions (`manager.analytics.business`, `manager.reports.orders`, `manager.reports.finance`, `manager.reports.sellers`, `manager.reports.products`, `manager.admins.monitor`, `manager.shares.read`, `manager.shares.documents`).
@@ -40,9 +41,9 @@ Last updated: 2026-11-26 · Phase 5 Payment, Financial System, Security & Produc
 ## Database Schema & Migrations
 
 - `accounts`: `0001_initial`, `0002_initial`
-- `authorization`: `0001_initial` through `0005_manager_and_share_permissions`
+- `authorization`: `0001_initial` through `0006_admin_staff_permissions`
 - `platform`: `0001_initial` through `0004_managerprofile_is_active_and_more`
-- `catalog`: `0001_initial` through `0003_productreport`
+- `catalog`: `0001_initial` through `0004_product_created_by_product_ownership_type_and_more`
 - `commerce`: `0001_initial` through `0005_paymentwebhookevent_commissionrule_product_and_more`
 
 ## Verification Results
@@ -50,7 +51,7 @@ Last updated: 2026-11-26 · Phase 5 Payment, Financial System, Security & Produc
 - `python backend/manage.py check`: passed (`0 issues`).
 - `python backend/manage.py makemigrations --check --dry-run`: passed (`No changes detected`).
 - `python backend/manage.py spectacular --validate`: passed (`0 errors, 0 warnings`).
-- `python backend/manage.py test apps.accounts apps.authorization apps.sellers apps.catalog apps.commerce apps.platform`: **41 tests passed** (covering all 5 phases: auth/JWT rotation, RBAC, dual seller & product approvals, multi-vendor checkout, 4-tier commission math, payment initiation, raw card rejection, HMAC webhook verification, duplicate webhook idempotency, payment failure stock rollback, Owner refund execution, financial ledger reconciliation, Admin restrictions, Manager permission/share isolation, and append-only ledger immutability).
+- `python backend/manage.py test apps.accounts apps.authorization apps.sellers apps.catalog apps.commerce apps.platform`: **44 tests passed** (covering all 5 phases + Final Owner & Admin Role Structure: 16-permission granular RBAC, immediate grant/revoke enforcement, platform-owned SHOPLEX product uploads with separate creator/source tracking, Admin seller-application block, anti-privilege-escalation checks, auth/JWT rotation, dual seller & product approvals, multi-vendor checkout, 4-tier commission math, payment webhooks, refunds, reconciliation, Manager isolation, and append-only ledger immutability).
 - `cd frontend && npm run typecheck`: passed (`0 errors`).
 
 ## Known Limitations & Live Third-Party Credentials Required for Production Cutover

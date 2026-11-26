@@ -102,6 +102,22 @@ Base path: `/api/v1/`
 | POST | `/owner/shares/transfers/` | Execute a legally documented share transfer between two partners with append-only transaction and ownership history logging | Owner role only |
 | POST | `/owner/shares/documents/` | Record an ownership legal document (`ShareDocument`: certificate, shareholder agreement, transfer deed, valuation report) | Owner role only |
 
+## Final Owner & Admin Role Structure (16-Permission Engine)
+
+| Method | Path | Purpose | Access |
+| --- | --- | --- | --- |
+| GET/POST | `/owner/admins/` | List all Admin staff accounts and their 16 permission states, or create a new Admin staff account (0 permissions by default) | Owner role only |
+| POST | `/owner/admins/{id}/status/` | Activate, suspend, or remove an Admin staff account with immediate `AuthSession` revocation | Owner role only |
+| POST | `/owner/admins/{id}/permissions/` | Grant or revoke any of the 16 granular Admin permissions (`UserPermission`) with immediate backend enforcement, notification, and `AuditLog` | Owner role only |
+| GET | `/admin-staff/me/permissions/` | Return the signed-in Admin's live backend-evaluated 16 permissions to sync frontend navigation | Admin or Owner |
+| GET/POST | `/admin-staff/products/` | List or upload platform-owned SHOPLEX products (`ownership_type="platform"`, `seller="SHOPLEX Official"` owned by Owner, `created_by=actor`, `product_source`) | Owner or Admin with `admin.products.create` |
+| PATCH/DELETE | `/admin-staff/products/{id}/` | Edit or delete platform-owned SHOPLEX products | Owner or Admin with `admin.products.edit` / `admin.products.delete` |
+| POST | `/admin-staff/products/{id}/publish/` | Publish a platform-owned SHOPLEX product | Owner or Admin with `admin.products.publish` |
+| GET | `/admin-staff/orders/` | View marketplace orders for operational support | Owner or Admin with `admin.orders.manage` |
+| GET | `/admin-staff/customers/` | View marketplace customer directory | Owner or Admin with `admin.customers.manage` |
+| GET | `/admin-staff/finance-report/` | Read-only selected financial report (no ledger writes or earnings access) | Owner or Admin with `admin.finance.reports` |
+| POST | `/admin-staff/refunds/{order_id}/` | Process an Owner-authorized order refund with stock restoration and immutable ledger entry | Owner or Admin with `admin.refunds.process` |
+
 ## Admin & Owner Control Center (Phase 3)
 
 | Method | Path | Purpose | Access |

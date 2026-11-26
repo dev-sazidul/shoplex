@@ -51,8 +51,37 @@ class Product(models.Model):
         PUBLISHED = "published", "Published"
         SUSPENDED = "suspended", "Suspended"
 
+    class OwnershipType(models.TextChoices):
+        SELLER = "seller", "Independent seller"
+        PLATFORM = "platform", "SHOPLEX / Owner platform-owned"
+
+    class ProductSource(models.TextChoices):
+        SELLER = "seller", "Independent seller"
+        OWNER_PLATFORM = "owner_platform", "Owner / SHOPLEX platform"
+        SUPPLIER = "supplier", "Authorized supplier"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     seller = models.ForeignKey(SellerProfile, on_delete=models.PROTECT, related_name="products")
+    ownership_type = models.CharField(
+        max_length=16,
+        choices=OwnershipType.choices,
+        default=OwnershipType.SELLER,
+        db_index=True,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="products_created",
+    )
+    product_source = models.CharField(
+        max_length=20,
+        choices=ProductSource.choices,
+        default=ProductSource.SELLER,
+        db_index=True,
+    )
+    supplier_name = models.CharField(max_length=160, blank=True)
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="products")
     brand = models.ForeignKey(Brand, null=True, blank=True, on_delete=models.SET_NULL, related_name="products")
     name = models.CharField(max_length=180)

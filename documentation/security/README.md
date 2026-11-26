@@ -23,3 +23,10 @@
 - **Zero Raw Card Storage**: `PaymentInitiationView` and `PaymentWebhookView` explicitly reject payloads containing `card_number`, `pan`, `cvv`, `cvc`, or `pin`.
 - **Webhook Signature & Idempotency**: `PaymentWebhookView` verifies HMAC-SHA256 signatures, checks server-calculated order amounts, and records unique `PaymentWebhookEvent.event_id` rows to ignore duplicate callbacks.
 - **Append-Only Ledgers**: `AuditLog`, `FinancialLedgerEntry`, `ShareTransaction`, and `OwnershipHistory` block `.save()` on existing primary keys and block `.delete()` at the model layer.
+
+## 4. Final Owner & Admin Role Structure Security Rules
+
+- **Owner-Exclusive Authority**: Only `Role.Key.OWNER` can create, suspend, or remove Admin accounts, assign/revoke any of the 16 Admin permissions, or access unrestricted financial ledgers.
+- **Zero Automatic Admin Permissions**: Admin accounts receive none of the 16 staff permissions by default; every `/api/v1/admin-staff/*` endpoint checks `_require_admin_permission(request.user, permission_key)` server-side on every request.
+- **Platform-Owned Product Attribution**: Admin-uploaded products are always assigned to the Owner-owned `SHOPLEX Official` store (`ownership_type="platform"`), recording `created_by=admin_user` and `product_source` (`owner_platform` or `supplier`) separately so Admin never becomes product owner or financial beneficiary.
+- **Anti-Privilege-Escalation & Seller Block**: Admin accounts are blocked (`403 Forbidden`) from applying as independent sellers (`/api/v1/seller/application/`), granting permissions to themselves or other Admins, creating other Admins, or modifying financial ledger entries (`test_admin_role_structure.py`).

@@ -33,6 +33,19 @@ export function AdminPortal() {
   const [sellerQueue, setSellerQueue] = useState<any[]>([]);
   const [productQueue, setProductQueue] = useState<any[]>([]);
   const [productReports, setProductReports] = useState<any[]>([]);
+  const [staffPerms, setStaffPerms] = useState<Record<string, boolean>>({});
+  const [platformProducts, setPlatformProducts] = useState<any[]>([]);
+  const [categories, setCategories] = useState<Array<{ slug: string; name: string }>>([]);
+  const [adminOrders, setAdminOrders] = useState<any[]>([]);
+  const [adminCustomers, setAdminCustomers] = useState<any[]>([]);
+  const [selectedFinance, setSelectedFinance] = useState<any>(null);
+  const [prodName, setProdName] = useState("");
+  const [prodDesc, setProdDesc] = useState("");
+  const [prodCat, setProdCat] = useState("");
+  const [prodPrice, setProdPrice] = useState("");
+  const [prodStock, setProdStock] = useState("10");
+  const [prodSource, setProdSource] = useState("owner_platform");
+  const [prodSupplier, setProdSupplier] = useState("");
   const [notifications, setNotifications] = useState<any[]>([]);
   const [reviewNote, setReviewNote] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
@@ -80,6 +93,35 @@ export function AdminPortal() {
         }),
         apiFetch("/management/product-reports/").then(async (res) => {
           if (res.ok) setProductReports(await res.json());
+        }),
+        fetch(`${apiBase}/categories/`).then(async (res) => {
+          if (res.ok) {
+            const d = await res.json();
+            setCategories(d.results ?? d);
+          }
+        }),
+        apiFetch("/admin-staff/me/permissions/").then(async (res) => {
+          if (res.ok) {
+            const d = await res.json();
+            const perms = d.permissions ?? {};
+            setStaffPerms(perms);
+            if (perms["admin.products.create"] || perms["admin.products.edit"]) {
+              const pRes = await apiFetch("/admin-staff/products/");
+              if (pRes.ok) setPlatformProducts((await pRes.json()).products ?? []);
+            }
+            if (perms["admin.orders.manage"]) {
+              const oRes = await apiFetch("/admin-staff/orders/");
+              if (oRes.ok) setAdminOrders((await oRes.json()).orders ?? []);
+            }
+            if (perms["admin.customers.manage"]) {
+              const cRes = await apiFetch("/admin-staff/customers/");
+              if (cRes.ok) setAdminCustomers((await cRes.json()).customers ?? []);
+            }
+            if (perms["admin.finance.reports"]) {
+              const fRes = await apiFetch("/admin-staff/finance-report/");
+              if (fRes.ok) setSelectedFinance(await fRes.json());
+            }
+          }
         }),
       ]);
     } catch (reason) {
@@ -176,6 +218,35 @@ export function AdminPortal() {
     await loadAdminData();
   }
 
+  async function uploadPlatformProduct(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    const response = await apiFetch("/admin-staff/products/", {
+      method: "POST",
+      body: JSON.stringify({
+        name: prodName,
+        description: prodDesc,
+        category: prodCat,
+        price: prodPrice,
+        stock_quantity: Number(prodStock),
+        product_source: prodSource,
+        supplier_name: prodSupplier,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setError(data.detail ?? Object.values(data).flat().join(" ") ?? "Platform product could not be uploaded.");
+      return;
+    }
+    setProdName("");
+    setProdDesc("");
+    setProdPrice("");
+    setProdSupplier("");
+    setMessage(`Platform-owned SHOPLEX product "${data.name}" created (Owner: ${data.product_owner}, Status: ${data.status}).`);
+    await loadAdminData();
+  }
+
   const openReportsCount = productReports.filter((r) => r.status === "open").length;
   const adminStats = adminData?.statistics;
   const ops = overview?.operations;
@@ -194,6 +265,14 @@ export function AdminPortal() {
       icon: "box",
       badge: productQueue.length ? String(productQueue.length) : undefined,
     },
+    ...(staffPerms["admin.products.create"] || staffPerms["admin.products.edit"]
+      ? [{ label: "SHOPLEX Products", href: "#platform-products", icon: "sparkles" as const }]
+      : []),
+    ...(staffPerms["admin.orders.manage"] ? [{ label: "Orders", href: "#orders", icon: "orders" as const }] : []),
+    ...(staffPerms["admin.customers.manage"] ? [{ label: "Customers", href: "#customers", icon: "user" as const }] : []),
+    ...(staffPerms["admin.finance.reports"]
+      ? [{ label: "Selected Finance Report", href: "#finance-report", icon: "chart" as const }]
+      : []),
     {
       label: "Product Reports",
       href: "#reports",
@@ -666,6 +745,176 @@ export function AdminPortal() {
                 Flagged products appear here for Admin compliance review.
               </EmptyState>
             )}
+          </CardBody>
+        </Card>
+      )}
+
+      {activeTab === "#platform-products" && (
+        <Card style={{ marginBottom: 24 }}>
+          <CardHeader
+            title="Upload Platform-Owned SHOPLEX Product"
+            subtitle="All products uploaded by Admin staff are owned exclusively by SHOPLEX / Owner. Admin is recorded only as creator and receives zero personal earnings or commission."
+            action={<Badge tone="navy">Owner: SHOPLEX Official</Badge>}
+          />
+          <CardBody>
+            {staffPerms["admin.products.create"] && (
+              <form onSubmit={uploadPlatformProduct} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
+                <label className="field">
+                  <span className="field__label">Product Name</span>
+                  <input className="field__input" required value={prodName} onChange={(e) => setProdName(e.target.value)} />
+                </label>
+                <label className="field">
+                  <span className="field__label">Category</span>
+                  <select className="field__input" required value={prodCat} onChange={(e) => setProdCat(e.target.value)}>
+                    <option value="">Choose category…</option>
+                    {categories.map((c) => (
+                      <option key={c.slug} value={c.slug}>{c.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="field__label">Price (BDT)</span>
+                  <input className="field__input" type="number" step="0.01" min="0.01" required value={prodPrice} onChange={(e) => setProdPrice(e.target.value)} />
+                </label>
+                <label className="field">
+                  <span className="field__label">Stock Quantity</span>
+                  <input className="field__input" type="number" min="0" required value={prodStock} onChange={(e) => setProdStock(e.target.value)} />
+                </label>
+                <label className="field">
+                  <span className="field__label">Product Source</span>
+                  <select className="field__input" value={prodSource} onChange={(e) => setProdSource(e.target.value)}>
+                    <option value="owner_platform">Owner / SHOPLEX Platform</option>
+                    <option value="supplier">Authorized Supplier</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="field__label">Supplier Name (if supplier source)</span>
+                  <input className="field__input" value={prodSupplier} onChange={(e) => setProdSupplier(e.target.value)} placeholder="Optional supplier reference" />
+                </label>
+                <label className="field" style={{ gridColumn: "1 / -1" }}>
+                  <span className="field__label">Description</span>
+                  <textarea className="field__input field__textarea" required value={prodDesc} onChange={(e) => setProdDesc(e.target.value)} />
+                </label>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <Button type="submit">Upload as SHOPLEX Platform Product</Button>
+                </div>
+              </form>
+            )}
+            {platformProducts.length ? (
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th>Product Owner</th>
+                      <th>Created By (Staff)</th>
+                      <th>Source</th>
+                      <th>Price</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {platformProducts.map((p) => (
+                      <tr key={p.id}>
+                        <td><strong>{p.name}</strong></td>
+                        <td><Badge tone="gold">{p.product_owner}</Badge></td>
+                        <td>{p.created_by_email || "Owner"}</td>
+                        <td>{p.product_source} {p.supplier_name ? `(${p.supplier_name})` : ""}</td>
+                        <td>{money(p.price)}</td>
+                        <td><StatusPill tone={p.status === "published" ? "success" : "warning"}>{p.status}</StatusPill></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState title="No platform-owned SHOPLEX products uploaded yet" />
+            )}
+          </CardBody>
+        </Card>
+      )}
+
+      {activeTab === "#orders" && (
+        <Card style={{ marginBottom: 24 }}>
+          <CardHeader title="Authorized Order Management" subtitle="Visible because Owner granted admin.orders.manage" />
+          <CardBody>
+            {adminOrders.length ? (
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Order #</th>
+                      <th>Customer</th>
+                      <th>Method</th>
+                      <th>Total</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminOrders.map((o) => (
+                      <tr key={o.id}>
+                        <td><strong>{o.order_number}</strong></td>
+                        <td>{o.customer_email}</td>
+                        <td>{o.payment_method.toUpperCase()}</td>
+                        <td>{money(o.total)}</td>
+                        <td><StatusPill>{o.status}</StatusPill></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState title="No orders available" />
+            )}
+          </CardBody>
+        </Card>
+      )}
+
+      {activeTab === "#customers" && (
+        <Card style={{ marginBottom: 24 }}>
+          <CardHeader title="Authorized Customer Directory" subtitle="Visible because Owner granted admin.customers.manage" />
+          <CardBody>
+            {adminCustomers.length ? (
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Customer</th>
+                      <th>Email</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminCustomers.map((c) => (
+                      <tr key={c.id}>
+                        <td><strong>{c.name}</strong></td>
+                        <td>{c.email}</td>
+                        <td><StatusPill tone={c.status === "active" ? "success" : "warning"}>{c.status}</StatusPill></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState title="No customers found" />
+            )}
+          </CardBody>
+        </Card>
+      )}
+
+      {activeTab === "#finance-report" && selectedFinance && (
+        <Card style={{ marginBottom: 24 }}>
+          <CardHeader
+            title="Selected Financial Report (Read-Only)"
+            subtitle={selectedFinance.notice}
+            action={<Badge tone="navy">Owner Authorized · Read Only</Badge>}
+          />
+          <CardBody>
+            <div className="lx-stat-grid">
+              <StatCard label="Gross Sales" value={money(selectedFinance.gross_sales)} icon="wallet" />
+              <StatCard label="Total Refunds" value={money(selectedFinance.total_refunds)} icon="refresh" />
+              <StatCard label="Completed Payouts" value={selectedFinance.completed_payouts_count} icon="check" />
+            </div>
           </CardBody>
         </Card>
       )}

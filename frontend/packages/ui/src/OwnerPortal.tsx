@@ -33,6 +33,25 @@ const permissionLabels: Record<string, string> = {
   "manager.shares.documents": "Ownership Legal Documents",
 };
 
+const adminStaffPermissionLabels: Record<string, string> = {
+  "admin.products.create": "1. Product Creation",
+  "admin.products.edit": "2. Product Editing",
+  "admin.products.delete": "3. Product Deletion",
+  "admin.products.publish": "4. Product Publishing",
+  "admin.products.approve": "5. Product Approval",
+  "admin.sellers.manage": "6. Seller Management",
+  "admin.customers.manage": "7. Customer Management",
+  "admin.orders.manage": "8. Order Management",
+  "admin.suppliers.manage": "9. Supplier Management",
+  "admin.suppliers.import": "10. Supplier Product Importing",
+  "admin.coupons.manage": "11. Coupon & Promotion Management",
+  "admin.shipping.manage": "12. Shipping Management",
+  "admin.support.manage": "13. Customer Support",
+  "admin.reports.analytics": "14. Reports & Analytics",
+  "admin.refunds.process": "15. Refund Processing",
+  "admin.finance.reports": "16. Selected Financial Report Access",
+};
+
 function money(amount: string | number | undefined | null) {
   const num = Number(amount ?? 0);
   return `৳${num.toLocaleString("en-BD", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -58,9 +77,25 @@ export function OwnerPortal() {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [managerGov, setManagerGov] = useState<any>(null);
   const [adminAssignData, setAdminAssignData] = useState<any>(null);
+  const [adminStaffData, setAdminStaffData] = useState<any>(null);
+  const [platformProducts, setPlatformProducts] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
   const [sharePlans, setSharePlans] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [reviewNote, setReviewNote] = useState<Record<string, string>>({});
+
+  // Admin Staff & Platform Product forms
+  const [admEmail, setAdmEmail] = useState("");
+  const [admFirst, setAdmFirst] = useState("");
+  const [admLast, setAdmLast] = useState("");
+  const [admPassword, setAdmPassword] = useState("");
+  const [pltName, setPltName] = useState("");
+  const [pltDesc, setPltDesc] = useState("");
+  const [pltCategory, setPltCategory] = useState("");
+  const [pltPrice, setPltPrice] = useState("");
+  const [pltStock, setPltStock] = useState("25");
+  const [pltSource, setPltSource] = useState<"owner_platform" | "supplier">("owner_platform");
+  const [pltSupplier, setPltSupplier] = useState("");
 
   // Financial & taxonomy forms
   const [newCommission, setNewCommission] = useState("10.00");
@@ -194,6 +229,23 @@ export function OwnerPortal() {
         }),
         apiFetch("/owner/admin-assignments/").then(async (res) => {
           if (res.ok) setAdminAssignData(await res.json());
+        }),
+        apiFetch("/owner/admins/").then(async (res) => {
+          if (res.ok) setAdminStaffData(await res.json());
+        }),
+        apiFetch("/admin-staff/products/").then(async (res) => {
+          if (res.ok) {
+            const data = await res.json();
+            setPlatformProducts(data.products ?? []);
+          }
+        }),
+        apiFetch("/categories/").then(async (res) => {
+          if (res.ok) {
+            const data = await res.json();
+            const list = data.results ?? data;
+            setCategories(list);
+            if (list[0]?.slug && !pltCategory) setPltCategory(list[0].slug);
+          }
         }),
         apiFetch("/owner/shares/plans/").then(async (res) => {
           if (res.ok) {
@@ -511,6 +563,110 @@ export function OwnerPortal() {
     await loadOwnerData();
   }
 
+  async function createAdminStaff(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    const response = await apiFetch("/owner/admins/", {
+      method: "POST",
+      body: JSON.stringify({
+        email: admEmail,
+        first_name: admFirst,
+        last_name: admLast,
+        password: admPassword,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setError(data.detail ?? Object.values(data).flat().join(" ") ?? "Admin staff account could not be created.");
+      return;
+    }
+    setAdmEmail("");
+    setAdmFirst("");
+    setAdmLast("");
+    setAdmPassword("");
+    setMessage(`Admin staff account ${data.email} created with 0 permissions granted by default.`);
+    await loadOwnerData();
+  }
+
+  async function updateAdminStaffStatus(adminId: string, action: "activate" | "suspend" | "remove") {
+    setError("");
+    setMessage("");
+    const response = await apiFetch(`/owner/admins/${adminId}/status/`, {
+      method: "POST",
+      body: JSON.stringify({ action, reason: `Owner ${action} action` }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setError(data.detail ?? "Admin staff status could not be updated.");
+      return;
+    }
+    setMessage(`Admin staff ${data.email} ${action}d (active sessions revoked if suspended or removed).`);
+    await loadOwnerData();
+  }
+
+  async function toggleAdminStaffPermission(adminId: string, permission: string, isGranted: boolean) {
+    setError("");
+    setMessage("");
+    const response = await apiFetch(`/owner/admins/${adminId}/permissions/`, {
+      method: "POST",
+      body: JSON.stringify({ permission, is_granted: isGranted }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setError(data.detail ?? "Admin permission could not be updated.");
+      return;
+    }
+    setMessage(
+      `Admin permission "${adminStaffPermissionLabels[permission] ?? permission}" ${isGranted ? "granted" : "revoked"} immediately.`
+    );
+    await loadOwnerData();
+  }
+
+  async function createPlatformProduct(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    const response = await apiFetch("/admin-staff/products/", {
+      method: "POST",
+      body: JSON.stringify({
+        name: pltName,
+        description: pltDesc,
+        category: pltCategory,
+        price: pltPrice,
+        stock_quantity: Number(pltStock || 0),
+        product_source: pltSource,
+        supplier_name: pltSource === "supplier" ? pltSupplier : "",
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setError(data.detail ?? Object.values(data).flat().join(" ") ?? "Platform product could not be created.");
+      return;
+    }
+    setPltName("");
+    setPltDesc("");
+    setPltPrice("");
+    setPltSupplier("");
+    setMessage(`Platform-owned SHOPLEX product "${data.name}" created (owner: ${data.product_owner}, status: ${data.status}).`);
+    await loadOwnerData();
+  }
+
+  async function publishPlatformProduct(productId: string) {
+    setError("");
+    setMessage("");
+    const response = await apiFetch(`/admin-staff/products/${productId}/publish/`, {
+      method: "POST",
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setError(data.detail ?? "Platform product could not be published.");
+      return;
+    }
+    setMessage(`Platform product "${data.name}" published directly by Owner.`);
+    await loadOwnerData();
+  }
+
   async function submitAdminAssignment(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -686,6 +842,12 @@ export function OwnerPortal() {
       href: "#finance",
       icon: "wallet",
       badge: pendingPayoutsCount ? String(pendingPayoutsCount) : undefined,
+    },
+    {
+      label: "Admin Staff & Permissions",
+      href: "#admins",
+      icon: "shield",
+      badge: adminStaffData?.admins?.length ? String(adminStaffData.admins.length) : undefined,
     },
     { label: "Managers & Admins", href: "#managers", icon: "user" },
     { label: "Business Shares", href: "#shares", icon: "sparkles" },
@@ -2461,6 +2623,277 @@ export function OwnerPortal() {
                 </div>
               ) : (
                 <EmptyState title="No audit events found" />
+              )}
+            </CardBody>
+          </Card>
+        </>
+      )}
+
+      {activeTab === "#admins" && (
+        <>
+          <div style={{ marginBottom: 20 }}>
+            <Notification title="Final Owner & Admin Role Structure Enforced" tone="info">
+              Admins are SHOPLEX Owner employees/staff — never independent sellers, product owners, or revenue-sharing partners. All 16 permissions default to OFF and take effect immediately on every backend API when granted or revoked by Owner.
+            </Notification>
+          </div>
+
+          <div className="lx-grid-2" style={{ marginBottom: 24 }}>
+            <Card>
+              <CardHeader
+                title="Create Admin Staff Account"
+                subtitle="New Admin accounts start with 0/16 permissions until explicitly authorized below."
+              />
+              <CardBody>
+                <form onSubmit={createAdminStaff} style={{ display: "grid", gap: 12 }}>
+                  <TextInput
+                    label="Admin Email"
+                    type="email"
+                    required
+                    value={admEmail}
+                    onChange={(e) => setAdmEmail(e.target.value)}
+                    placeholder="staff.admin@shoplex.local"
+                  />
+                  <div className="lx-grid-2">
+                    <TextInput
+                      label="First Name"
+                      value={admFirst}
+                      onChange={(e) => setAdmFirst(e.target.value)}
+                      placeholder="First name"
+                    />
+                    <TextInput
+                      label="Last Name"
+                      value={admLast}
+                      onChange={(e) => setAdmLast(e.target.value)}
+                      placeholder="Last name"
+                    />
+                  </div>
+                  <TextInput
+                    label="Initial Password (optional)"
+                    type="password"
+                    value={admPassword}
+                    onChange={(e) => setAdmPassword(e.target.value)}
+                    placeholder="Min 12 chars or leave blank to auto-generate"
+                  />
+                  <Button type="submit">Create Admin Staff</Button>
+                </form>
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardHeader
+                title="Upload Platform-Owned SHOPLEX Product"
+                subtitle="Owner can directly upload & publish SHOPLEX Official products (100% platform revenue)."
+              />
+              <CardBody>
+                <form onSubmit={createPlatformProduct} style={{ display: "grid", gap: 12 }}>
+                  <TextInput
+                    label="Product Name"
+                    required
+                    value={pltName}
+                    onChange={(e) => setPltName(e.target.value)}
+                    placeholder="e.g. SHOPLEX Executive Leather Briefcase"
+                  />
+                  <TextInput
+                    label="Description"
+                    required
+                    value={pltDesc}
+                    onChange={(e) => setPltDesc(e.target.value)}
+                    placeholder="Full product description"
+                  />
+                  <div className="lx-grid-2">
+                    <SelectInput
+                      label="Category"
+                      value={pltCategory}
+                      onChange={(e) => setPltCategory(e.target.value)}
+                      options={
+                        categories.length
+                          ? categories.map((c: any) => ({ value: c.slug, label: c.name }))
+                          : [{ value: "electronics", label: "Electronics" }]
+                      }
+                    />
+                    <SelectInput
+                      label="Product Source"
+                      value={pltSource}
+                      onChange={(e) => setPltSource(e.target.value as "owner_platform" | "supplier")}
+                      options={[
+                        { value: "owner_platform", label: "Owner / Platform Inventory" },
+                        { value: "supplier", label: "Supplier Sourced" },
+                      ]}
+                    />
+                  </div>
+                  {pltSource === "supplier" && (
+                    <TextInput
+                      label="Supplier Name"
+                      value={pltSupplier}
+                      onChange={(e) => setPltSupplier(e.target.value)}
+                      placeholder="e.g. Global Supply Co."
+                    />
+                  )}
+                  <div className="lx-grid-2">
+                    <TextInput
+                      label="Price (BDT)"
+                      type="number"
+                      step="0.01"
+                      min="1"
+                      required
+                      value={pltPrice}
+                      onChange={(e) => setPltPrice(e.target.value)}
+                      placeholder="2490.00"
+                    />
+                    <TextInput
+                      label="Stock Quantity"
+                      type="number"
+                      min="0"
+                      required
+                      value={pltStock}
+                      onChange={(e) => setPltStock(e.target.value)}
+                    />
+                  </div>
+                  <Button type="submit">Publish SHOPLEX Product</Button>
+                </form>
+              </CardBody>
+            </Card>
+          </div>
+
+          <Card style={{ marginBottom: 24 }}>
+            <CardHeader
+              title="Admin Staff Directory & 16-Permission Engine"
+              subtitle="Toggle individual permissions per Admin account. Revocations take effect immediately on the backend and Admin sidebar."
+              action={<Badge tone="navy">{adminStaffData?.admins?.length ?? 0} Admin staff</Badge>}
+            />
+            <CardBody>
+              {adminStaffData?.admins?.length ? (
+                <div style={{ display: "grid", gap: 18 }}>
+                  {adminStaffData.admins.map((adm: any) => (
+                    <article
+                      key={adm.id}
+                      style={{
+                        padding: 18,
+                        border: "1px solid var(--line)",
+                        borderRadius: "var(--radius-sm)",
+                        display: "grid",
+                        gap: 14,
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                        <div>
+                          <strong style={{ fontSize: 15 }}>
+                            {`${adm.first_name ?? ""} ${adm.last_name ?? ""}`.trim() || adm.email}
+                          </strong>
+                          <span style={{ marginLeft: 10, fontSize: 12, color: "var(--slate)" }}>
+                            {adm.email} · {adm.granted_count}/16 permissions active
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <StatusPill tone={adm.is_active ? "success" : "danger"}>
+                            {adm.status}
+                          </StatusPill>
+                          {adm.is_active ? (
+                            <Button size="sm" variant="secondary" onClick={() => void updateAdminStaffStatus(adm.id, "suspend")}>
+                              Suspend
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="primary" onClick={() => void updateAdminStaffStatus(adm.id, "activate")}>
+                              Activate
+                            </Button>
+                          )}
+                          <Button size="sm" variant="danger" onClick={() => void updateAdminStaffStatus(adm.id, "remove")}>
+                            Remove Admin
+                          </Button>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {Object.entries(adminStaffPermissionLabels).map(([permKey, permLabel]) => {
+                          const granted = Boolean(adm.permissions?.[permKey]);
+                          return (
+                            <Button
+                              key={permKey}
+                              size="sm"
+                              variant={granted ? "primary" : "secondary"}
+                              onClick={() => void toggleAdminStaffPermission(adm.id, permKey, !granted)}
+                            >
+                              {granted ? "✓ " : "+ "}
+                              {permLabel}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="No Admin staff accounts yet">
+                  Create an Admin staff account above and assign only the permissions required for their role.
+                </EmptyState>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card style={{ marginBottom: 24 }}>
+            <CardHeader
+              title="Platform-Owned SHOPLEX Products"
+              subtitle="All products uploaded by Owner or authorized Admin staff are owned by SHOPLEX Official with creator & source tracked separately."
+              action={<Badge tone="gold">{platformProducts.length} platform items</Badge>}
+            />
+            <CardBody>
+              {platformProducts.length ? (
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>Product Owner</th>
+                        <th>Created By</th>
+                        <th>Source</th>
+                        <th>Price</th>
+                        <th>Stock</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {platformProducts.map((p: any) => (
+                        <tr key={p.id}>
+                          <td>
+                            <strong>{p.name}</strong>
+                            <span style={{ display: "block", fontSize: 11, color: "var(--slate)" }}>
+                              {p.category_name} · SKU: {p.sku}
+                            </span>
+                          </td>
+                          <td>
+                            <Badge tone="gold">{p.product_owner}</Badge>
+                          </td>
+                          <td style={{ fontSize: 12 }}>{p.created_by_email || "Owner"}</td>
+                          <td style={{ fontSize: 12 }}>
+                            {p.product_source === "supplier"
+                              ? `Supplier${p.supplier_name ? ` (${p.supplier_name})` : ""}`
+                              : "Owner / Platform"}
+                          </td>
+                          <td>{money(p.price)}</td>
+                          <td>{p.stock_quantity}</td>
+                          <td>
+                            <StatusPill tone={p.status === "published" ? "success" : "warning"}>
+                              {p.status.replaceAll("_", " ")}
+                            </StatusPill>
+                          </td>
+                          <td>
+                            {p.status !== "published" ? (
+                              <Button size="sm" onClick={() => void publishPlatformProduct(p.id)}>
+                                Publish
+                              </Button>
+                            ) : (
+                              <span style={{ fontSize: 12, color: "var(--slate)" }}>Live</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <EmptyState title="No platform-owned products yet">
+                  Upload a SHOPLEX Official product above or grant an Admin staff member product creation permission.
+                </EmptyState>
               )}
             </CardBody>
           </Card>

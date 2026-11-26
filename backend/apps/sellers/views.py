@@ -35,6 +35,9 @@ class MySellerApplicationView(APIView):
 
     @extend_schema(request=SellerApplicationSubmissionSerializer, responses=SellerApplicationSerializer)
     def post(self, request):
+        if request.user.role_assignments.filter(role__key=Role.Key.ADMIN).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Admin staff accounts cannot register as independent marketplace sellers.")
         serializer = SellerApplicationSubmissionSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         application = serializer.save()
